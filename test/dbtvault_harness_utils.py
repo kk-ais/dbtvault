@@ -355,7 +355,7 @@ def run_dbt_command(command) -> str:
     joined_command = " ".join(command)
     test.logger.log(msg=f"Running with dbt command: {joined_command}", level=logging.INFO)
 
-    child = pexpect.spawn(command=joined_command, cwd=test.TEST_PROJECT_ROOT, encoding="utf-8")
+    child = pexpect.spawn(command=joined_command, cwd=test.TEST_PROJECT_ROOT, encoding="utf-8", timeout=1000)
     child.logfile_read = sys.stdout
     logs = child.read()
     child.close()
@@ -668,6 +668,29 @@ def feature_sub_types():
             'mat': [
                 'eff_sats_period_mat',
                 'eff_sats_rank_mat'
+            ],
+            'closed': [
+                'eff_sat_closed_records'
+            ]
+        },
+        'sats_with_oos': {
+            'main': [
+                'base_sats',
+                'oos_sats'
+            ],
+            'cycles': [
+                'base_sats_cycles'
+            ],
+            'mat': [
+                'base_sats_period_mat'
+            ]
+        },
+        'xts': {
+            'main': [
+                'xts'
+            ],
+            'inc': [
+                'xts_inc'
             ]
         },
         'ma_sats': {
@@ -690,7 +713,15 @@ def feature_sub_types():
                 'mas_two_cdk_cycles_duplicates'
             ],
             'pm': [
-                'mas_period_mat'
+                'mas_period_mat',
+                'mas_one_cdk_period_duplicates',
+                'mas_two_cdk_period_duplicates'
+            ],
+            'rm': [
+                'mas_rank_mat',
+                'mas_one_cdk_base_sats_rank_mat',
+                'mas_one_cdk_rank_duplicates',
+                'mas_two_cdk_rank_duplicates'
             ]
         },
         'pit': {
