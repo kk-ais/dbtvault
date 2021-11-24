@@ -7,7 +7,6 @@ import shutil
 import sys
 from hashlib import md5, sha256
 from pathlib import Path
-from subprocess import PIPE, Popen, STDOUT
 from typing import List
 
 import pandas as pd
@@ -29,9 +28,9 @@ def platform():
 
         with open(test.INVOKE_YML_FILE) as config:
             config_dict = yaml.safe_load(config)
-            plt = config_dict.get('platform')
+            plt = config_dict.get('platform').lower()
 
-            if plt.lower() not in test.AVAILABLE_PLATFORMS:
+            if plt not in test.AVAILABLE_PLATFORMS:
                 test.logger.error(f"Platform must be set to one of: {', '.join(test.AVAILABLE_PLATFORMS)} "
                                   f"in '{test.INVOKE_YML_FILE}'")
                 sys.exit(0)
@@ -116,26 +115,34 @@ def clean_target():
     shutil.rmtree(test.TEST_PROJECT_ROOT / 'target', ignore_errors=True)
 
 
-def clean_csv():
+def clean_csv(model_name=None):
     """
     Deletes csv files in csv folder.
     """
 
-    delete_files = [file for file in glob.glob(str(test.CSV_DIR / '*.csv'), recursive=True)]
+    if model_name:
+        delete_files = [test.CSV_DIR / f"{model_name.lower()}.csv"]
+    else:
+        delete_files = [file for file in glob.glob(str(test.CSV_DIR / '*.csv'), recursive=True)]
 
     for file in delete_files:
-        os.remove(file)
+        if os.path.isfile(file):
+            os.remove(file)
 
 
-def clean_models():
+def clean_models(model_name=None):
     """
     Deletes models in features folder.
     """
 
-    delete_files = [file for file in glob.glob(str(test.TEST_MODELS_ROOT / '*.sql'), recursive=True)]
+    if model_name:
+        delete_files = [test.TEST_MODELS_ROOT / f"{model_name.lower()}.sql"]
+    else:
+        delete_files = [file for file in glob.glob(str(test.TEST_MODELS_ROOT / '*.sql'), recursive=True)]
 
     for file in delete_files:
-        os.remove(file)
+        if os.path.isfile(file):
+            os.remove(file)
 
 
 def create_dummy_model():
@@ -156,7 +163,7 @@ def is_successful_run(dbt_logs: str):
 
 
 def is_pipeline():
-    return os.getenv('CIRCLE_NODE_INDEX') and os.getenv('CIRCLE_JOB') and os.getenv('CIRCLE_BRANCH')
+    return os.getenv('PIPELINE_JOB') and os.getenv('PIPELINE_BRANCH')
 
 
 def parse_hashdiffs(columns_as_series: Series) -> Series:
@@ -307,12 +314,13 @@ def set_custom_names():
     """
 
     def sanitise_strings(unsanitised_str):
-        return unsanitised_str.replace("-", "_").replace(".", "_").replace("/", "_")
+        return unsanitised_str.replace("-", "_").replace(".", "_").replace("/", "_").replace(' ', '_')
 
-    circleci_metadata = {
+    pipeline_metadata = {
         "snowflake": {
             "SCHEMA_NAME": f"{os.getenv('SNOWFLAKE_DB_SCHEMA')}_{os.getenv('SNOWFLAKE_DB_USER')}"
-                           f"_{os.getenv('CIRCLE_BRANCH')}_{os.getenv('CIRCLE_JOB')}_{os.getenv('CIRCLE_NODE_INDEX')}"
+                           f"_{os.getenv('PIPELINE_BRANCH')}_{os.getenv('PIPELINE_JOB')}".upper(),
+            "DATABASE_NAME": os.getenv('SNOWFLAKE_DB_DATABASE')
         }
     }
 
@@ -327,7 +335,7 @@ def set_custom_names():
     }
 
     if is_pipeline():
-        return {k: sanitise_strings(v) for k, v in circleci_metadata[platform()].items()}
+        return {k: sanitise_strings(v) for k, v in pipeline_metadata[platform()].items()}
     else:
         return {k: sanitise_strings(v) for k, v in local_metadata[platform()].items()}
 
@@ -347,7 +355,7 @@ def run_dbt_command(command) -> str:
     joined_command = " ".join(command)
     test.logger.log(msg=f"Running with dbt command: {joined_command}", level=logging.INFO)
 
-    child = pexpect.spawn(command=joined_command, cwd=test.TEST_PROJECT_ROOT, encoding="utf-8")
+    child = pexpect.spawn(command=joined_command, cwd=test.TEST_PROJECT_ROOT, encoding="utf-8", timeout=1000)
     child.logfile_read = sys.stdout
     logs = child.read()
     child.close()
@@ -355,16 +363,19 @@ def run_dbt_command(command) -> str:
     return logs
 
 
-def run_dbt_seed(seed_file_name=None, full_refresh=False) -> str:
+def run_dbt_seeds(seed_file_names=None, full_refresh=False) -> str:
     """
     Run seed files in dbt
         :return: dbt logs
     """
 
+    if isinstance(seed_file_names, str):
+        seed_file_names = [seed_file_names]
+
     command = ['dbt', 'seed']
 
-    if seed_file_name:
-        command.extend(['--select', seed_file_name, '--full-refresh'])
+    if seed_file_names:
+        command.extend(['--select', " ".join(seed_file_names), '--full-refresh'])
 
     if "full-refresh" not in command and full_refresh:
         command.append('--full-refresh')
@@ -404,7 +415,8 @@ def run_dbt_models(*, mode='compile', model_names: list, args=None, full_refresh
         command.append('--full-refresh')
 
     if args:
-        command.extend([f"--vars '{json.dumps(args)}'"])
+        args = json.dumps(args)
+        command.extend([f"--vars '{args}'"])
 
     return run_dbt_command(command)
 
@@ -420,7 +432,7 @@ def run_dbt_operation(macro_name: str, args=None) -> str:
 
     if args:
         args = str(args).replace('\'', '')
-        command.extend([f"--args '{json.dumps(args)}'"])
+        command.extend([f"--args '{args}'"])
 
     return run_dbt_command(command)
 
@@ -620,3 +632,125 @@ def retrieve_expected_sql(request: FixtureRequest):
         processed_file = inject_parameters("".join(file), set_custom_names())
 
         return processed_file
+
+
+def feature_sub_types():
+    return {
+        'sats': {
+            'main': [
+                'sats',
+            ],
+            'cycles': [
+                'sats_cycles'
+            ],
+            'pm': [
+                'sats_period_mat_base',
+                'sats_period_mat_other'
+                'sats_period_mat_inferred_range',
+                'sats_period_mat_provided_range'
+            ],
+            'rank': [
+                'sats_rank_mat'
+            ]
+        },
+        'eff_sats': {
+            'main': [
+                'eff_sats',
+                'eff_sats_disabled_end_dating'
+            ],
+            'auto': [
+                'eff_sat_auto_end_dating_detail_base',
+                'eff_sat_auto_end_dating_detail_inc'
+            ],
+            'multi_part': [
+                'eff_sats_multi_part'
+            ],
+            'mat': [
+                'eff_sats_period_mat',
+                'eff_sats_rank_mat'
+            ],
+            'closed': [
+                'eff_sat_closed_records'
+            ]
+        },
+        'sats_with_oos': {
+            'main': [
+                'base_sats',
+                'oos_sats'
+            ],
+            'cycles': [
+                'base_sats_cycles'
+            ],
+            'mat': [
+                'base_sats_period_mat'
+            ]
+        },
+        'xts': {
+            'main': [
+                'xts'
+            ],
+            'inc': [
+                'xts_inc'
+            ]
+        },
+        'ma_sats': {
+            '1cdk': [
+                'mas_one_cdk_0_base',
+                'mas_one_cdk_1_inc',
+                'mas_one_cdk_base_sats'
+            ],
+            '1cdk_cycles': [
+                'mas_one_cdk_base_sats_cycles',
+                'mas_one_cdk_cycles_duplicates'
+            ],
+            '2cdk': [
+                'mas_two_cdk_0_base',
+                'mas_two_cdk_1_inc',
+                'mas_two_cdk_base_sats'
+            ],
+            '2cdk_cycles': [
+                'mas_two_cdk_base_sats_cycles',
+                'mas_two_cdk_cycles_duplicates'
+            ],
+            'pm': [
+                'mas_period_mat',
+                'mas_one_cdk_period_duplicates',
+                'mas_two_cdk_period_duplicates'
+            ],
+            'rm': [
+                'mas_rank_mat',
+                'mas_one_cdk_base_sats_rank_mat',
+                'mas_one_cdk_rank_duplicates',
+                'mas_two_cdk_rank_duplicates'
+            ]
+        },
+        'pit': {
+            'main': [
+                'pit'
+            ],
+            '1sat_base': [
+                'pit_one_sat_base',
+            ],
+            '1sat_inc': [
+                'pit_one_sat_inc'
+            ],
+            '2sat': [
+                'pit_two_sat_base',
+                'pit_two_sat_inc'
+            ]
+        },
+        'bridge': {
+            'inc': [
+                'bridge_incremental'
+            ],
+            '1link': [
+                'bridge_one_hub_one_link'
+            ],
+            '2link': [
+                'bridge_one_hub_two_links'
+            ],
+            '3link': [
+                'bridge_one_hub_three_links'
+            ]
+        },
+    }

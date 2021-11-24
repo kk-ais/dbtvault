@@ -20,7 +20,7 @@
 
 {{- dbtvault.prepend_generated_by() }}
 
-{%- set max_date = '9999-12-31 23:59:59.999' %}
+{%- set max_datetime = var('max_datetime', '9999-12-31 23:59:59.999999') %}
 
 WITH source_data AS (
     SELECT {{ dbtvault.prefix(source_cols, 'a', alias_target='source') }}
@@ -51,14 +51,14 @@ latest_records AS (
 latest_open AS (
     SELECT {{ dbtvault.alias_all(source_cols, 'c') }}
     FROM latest_records AS c
-    WHERE TO_DATE(c.{{ src_end_date }}) = TO_DATE('{{ max_date }}')
+    WHERE TO_DATE(c.{{ src_end_date }}) = TO_DATE('{{ max_datetime }}')
 ),
 
 {# Selecting the closed records of the most recent records for each link hashkey -#}
 latest_closed AS (
     SELECT {{ dbtvault.alias_all(source_cols, 'd') }}
     FROM latest_records AS d
-    WHERE TO_DATE(d.{{ src_end_date }}) != TO_DATE('{{ max_date }}')
+    WHERE TO_DATE(d.{{ src_end_date }}) != TO_DATE('{{ max_datetime }}')
 ),
 
 {# Identifying the completely new link relationships to be opened in eff sat -#}
@@ -84,6 +84,7 @@ new_reopened_records AS (
     FROM source_data AS g
     INNER JOIN latest_closed AS lc
     ON g.{{ src_pk }} = lc.{{ src_pk }}
+    WHERE TO_DATE(g.{{ src_end_date }}) = TO_DATE('{{ max_datetime }}')
 ),
 
 {%- if is_auto_end_dating %}
@@ -105,6 +106,28 @@ new_closed_records AS (
     WHERE ({{ dbtvault.multikey(src_sfk, prefix=['lo', 'h'], condition='<>', operator='OR') }})
 ),
 
+{#- else if is_auto_end_dating -#}
+{% else %}
+
+new_closed_records AS (
+    SELECT DISTINCT
+        lo.{{ src_pk }},
+        {{ dbtvault.alias_all(fk_cols, 'lo') }},
+        lo.{{ src_start_date }} AS {{ src_start_date }},
+        h.{{ src_eff }} AS {{ src_end_date }},
+        h.{{ src_eff }} AS {{ src_eff }},
+        h.{{ src_ldts }},
+        lo.{{ src_source }}
+    FROM source_data AS h
+    LEFT JOIN Latest_open AS lo
+    ON lo.{{ src_pk }} = h.{{ src_pk }}
+    LEFT JOIN latest_closed AS lc
+    ON lc.{{ src_pk }} = h.{{ src_pk }}
+    WHERE TO_DATE(h.{{ src_end_date }}) != TO_DATE('{{ max_datetime }}')
+    AND lo.{{ src_pk }} IS NOT NULL
+    AND lc.{{ src_pk }} IS NULL
+),
+
 {#- end if is_auto_end_dating -#}
 {%- endif %}
 
@@ -112,12 +135,11 @@ records_to_insert AS (
     SELECT * FROM new_open_records
     UNION
     SELECT * FROM new_reopened_records
-    {%- if is_auto_end_dating %}
     UNION
     SELECT * FROM new_closed_records
-    {%- endif %}
 )
 
+{#- else if not dbtvault.is_any_incremental() -#}
 {%- else %}
 
 records_to_insert AS (
@@ -146,7 +168,7 @@ SELECT * FROM records_to_insert
 
 {{- dbtvault.prepend_generated_by() }}
 
-{%- set max_date = '9999-12-31 23:59:59.996' %}
+{%- set max_datetime = var('max_datetime', '9999-12-31 23:59:59.9999999') %}
 
 WITH source_data AS (
     SELECT {{ dbtvault.prefix(source_cols, 'a', alias_target='source') }}
@@ -181,14 +203,14 @@ latest_records AS (
 latest_open AS (
     SELECT {{ dbtvault.alias_all(source_cols, 'c') }}
     FROM latest_records AS c
-    WHERE CONVERT(DATE, c.{{ src_end_date }}) = CONVERT(DATE, '{{ max_date }}')
+    WHERE CONVERT(DATE, c.{{ src_end_date }}) = CONVERT(DATE, '{{ max_datetime }}')
 ),
 
 {# Selecting the closed records of the most recent records for each link hashkey -#}
 latest_closed AS (
     SELECT {{ dbtvault.alias_all(source_cols, 'd') }}
     FROM latest_records AS d
-    WHERE CONVERT(DATE, d.{{ src_end_date }}) != CONVERT(DATE, '{{ max_date }}')
+    WHERE CONVERT(DATE, d.{{ src_end_date }}) != CONVERT(DATE, '{{ max_datetime }}')
 ),
 
 {# Identifying the completely new link relationships to be opened in eff sat -#}
@@ -214,6 +236,7 @@ new_reopened_records AS (
     FROM source_data AS g
     INNER JOIN latest_closed AS lc
     ON g.{{ src_pk }} = lc.{{ src_pk }}
+    WHERE CAST((g.{{ src_end_date }}) AS DATE) = CAST(('{{ max_datetime }}') AS DATE)
 ),
 
 {%- if is_auto_end_dating %}
@@ -235,6 +258,28 @@ new_closed_records AS (
     WHERE ({{ dbtvault.multikey(src_sfk, prefix=['lo', 'h'], condition='<>', operator='OR') }})
 ),
 
+{#- else if is_auto_end_dating -#}
+{% else %}
+
+new_closed_records AS (
+    SELECT DISTINCT
+        lo.{{ src_pk }},
+        {{ dbtvault.alias_all(fk_cols, 'lo') }},
+        lo.{{ src_start_date }} AS {{ src_start_date }},
+        h.{{ src_eff }} AS {{ src_end_date }},
+        h.{{ src_eff }} AS {{ src_eff }},
+        h.{{ src_ldts }},
+        lo.{{ src_source }}
+    FROM source_data AS h
+    LEFT JOIN Latest_open AS lo
+    ON lo.{{ src_pk }} = h.{{ src_pk }}
+    LEFT JOIN latest_closed AS lc
+    ON lc.{{ src_pk }} = h.{{ src_pk }}
+    WHERE CAST((h.{{ src_end_date }}) AS DATE) != CAST(('{{ max_datetime }}') AS DATE)
+    AND lo.{{ src_pk }} IS NOT NULL
+    AND lc.{{ src_pk }} IS NULL
+),
+
 {#- end if is_auto_end_dating -#}
 {%- endif %}
 
@@ -242,12 +287,11 @@ records_to_insert AS (
     SELECT * FROM new_open_records
     UNION
     SELECT * FROM new_reopened_records
-    {%- if is_auto_end_dating %}
     UNION
     SELECT * FROM new_closed_records
-    {%- endif %}
 )
 
+{#- else if not dbtvault.is_any_incremental() -#}
 {%- else %}
 
 records_to_insert AS (
@@ -261,6 +305,7 @@ records_to_insert AS (
 SELECT * FROM records_to_insert
 {%- endmacro -%}
 
+
 {%- macro bigquery__eff_sat(src_pk, src_dfk, src_sfk, src_start_date, src_end_date, src_eff, src_ldts, src_source, source_model) -%}
 
 {{- dbtvault.check_required_parameters(src_pk=src_pk, src_dfk=src_dfk, src_sfk=src_sfk,
@@ -272,7 +317,8 @@ SELECT * FROM records_to_insert
 {%- set fk_cols = dbtvault.expand_column_list(columns=[src_dfk, src_sfk]) -%}
 {%- set dfk_cols = dbtvault.expand_column_list(columns=[src_dfk]) -%}
 {%- set is_auto_end_dating = config.get('is_auto_end_dating', default=false) %}
-{%- set max_date = '9999-12-31 23:59:59.999' -%}
+
+{%- set max_datetime = var('max_datetime', '9999-12-31 23:59:59.999') %}
 
 {{- dbtvault.prepend_generated_by() }}
 
@@ -310,14 +356,14 @@ latest_records AS (
 latest_open AS (
     SELECT {{ dbtvault.alias_all(source_cols, 'c') }}
     FROM latest_records AS c
-    WHERE DATE(c.{{ src_end_date }}) = DATE('{{max_date}}')
+    WHERE DATE(c.{{ src_end_date }}) = DATE('{{max_datetime}}')
 ),
 
 {# Selecting the closed records of the most recent records for each link hashkey -#}
 latest_closed AS (
     SELECT {{ dbtvault.alias_all(source_cols, 'd') }}
     FROM latest_records AS d
-    WHERE DATE(d.{{ src_end_date }}) != DATE('{{max_date}}')
+    WHERE DATE(d.{{ src_end_date }}) != DATE('{{max_datetime}}')
 ),
 
 {# Identifying the completely new link relationships to be opened in eff sat -#}
@@ -325,10 +371,7 @@ new_open_records AS (
     SELECT DISTINCT
         {{ dbtvault.alias_all(source_cols, 'f') }}
     FROM source_data AS f
-    LEFT JOIN
-            latest_records
-
-        AS lr
+    LEFT JOIN latest_records AS lr
     ON f.{{ src_pk }} = lr.{{ src_pk }}
     WHERE lr.{{ src_pk }} IS NULL
 ),
@@ -346,6 +389,7 @@ new_reopened_records AS (
     FROM source_data AS g
     INNER JOIN latest_closed AS lc
     ON g.{{ src_pk }} = lc.{{ src_pk }}
+    WHERE CAST((g.{{ src_end_date }}) AS DATE) = CAST(('{{ max_datetime }}') AS DATE)
 ),
 
 {%- if is_auto_end_dating %}
@@ -367,20 +411,40 @@ new_closed_records AS (
     WHERE ({{ dbtvault.multikey(src_sfk, prefix=['lo', 'h'], condition='<>', operator='OR') }})
 ),
 
-{#-
-end if is_auto_end_dating -#}
+{#- else if is_auto_end_dating -#}
+{% else %}
+
+new_closed_records AS (
+    SELECT DISTINCT
+        lo.{{ src_pk }},
+        {{ dbtvault.alias_all(fk_cols, 'lo') }},
+        lo.{{ src_start_date }} AS {{ src_start_date }},
+        h.{{ src_eff }} AS {{ src_end_date }},
+        h.{{ src_eff }} AS {{ src_eff }},
+        h.{{ src_ldts }},
+        lo.{{ src_source }}
+    FROM source_data AS h
+    LEFT JOIN Latest_open AS lo
+    ON lo.{{ src_pk }} = h.{{ src_pk }}
+    LEFT JOIN latest_closed AS lc
+    ON lc.{{ src_pk }} = h.{{ src_pk }}
+    WHERE CAST((h.{{ src_end_date }}) AS DATE) != CAST(('{{ max_datetime }}') AS DATE)
+    AND lo.{{ src_pk }} IS NOT NULL
+    AND lc.{{ src_pk }} IS NULL
+),
+
+{#- end if is_auto_end_dating -#}
 {%- endif %}
 
 records_to_insert AS (
     SELECT * FROM new_open_records
     UNION DISTINCT
     SELECT * FROM new_reopened_records
-    {%- if is_auto_end_dating %}
     UNION DISTINCT
     SELECT * FROM new_closed_records
-    {%- endif %}
 )
 
+{#- else if not dbtvault.is_any_incremental() -#}
 {%- else %}
 
 records_to_insert AS (
@@ -388,9 +452,10 @@ records_to_insert AS (
     FROM source_data AS i
 )
 
-{#-
-end if not dbtvault.is_any_incremental() -#}
+{#- end if not dbtvault.is_any_incremental() -#}
 {%- endif %}
 
 SELECT *
-FROM records_to_insert {%- endmacro -%}
+FROM records_to_insert
+
+{%- endmacro -%}
