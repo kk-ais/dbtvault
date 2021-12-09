@@ -636,12 +636,47 @@ def retrieve_expected_sql(request: FixtureRequest):
 
 def feature_sub_types():
     return {
+        'hubs': {
+            'main': [
+                'hubs'
+            ],
+            'comppk': [
+                'hubs_comppk'
+            ],
+            'incremental': [
+                'hubs_incremental'
+            ],
+            'pm': [
+                'hubs_period_mat'
+            ],
+            'rank': [
+                'hubs_rank_mat'
+            ]
+        },
+        'links': {
+            'main': [
+                'links',
+                'links_comppk'
+            ],
+            'incremental': [
+                'links_incremental'
+            ],
+            'pm': [
+                'links_period_mat'
+            ],
+            'rank': [
+                'links_rank_mat'
+            ]
+        },
         'sats': {
             'main': [
                 'sats',
             ],
             'cycles': [
                 'sats_cycles'
+            ],
+            'incremental': [
+                'sats_incremental'
             ],
             'pm': [
                 'sats_period_mat_base',
@@ -662,6 +697,10 @@ def feature_sub_types():
                 'eff_sat_auto_end_dating_detail_base',
                 'eff_sat_auto_end_dating_detail_inc'
             ],
+            'incremental': [
+                'eff_sat_auto_end_dating_incremental',
+                'eff_sat_disabled_end_dating_incremental'
+            ],
             'multi_part': [
                 'eff_sats_multi_part'
             ],
@@ -673,21 +712,10 @@ def feature_sub_types():
                 'eff_sat_closed_records'
             ]
         },
-        'sats_with_oos': {
-            'main': [
-                'base_sats',
-                'oos_sats'
-            ],
-            'cycles': [
-                'base_sats_cycles'
-            ],
-            'mat': [
-                'base_sats_period_mat'
-            ]
-        },
         'xts': {
             'main': [
-                'xts'
+                'xts',
+                'xts_comppk'
             ],
             'inc': [
                 'xts_inc'
@@ -711,6 +739,10 @@ def feature_sub_types():
             '2cdk_cycles': [
                 'mas_two_cdk_base_sats_cycles',
                 'mas_two_cdk_cycles_duplicates'
+            ],
+            'incremental': [
+                'mas_one_cdk_incremental',
+                'mas_two_cdk_incremental'
             ],
             'pm': [
                 'mas_period_mat',
